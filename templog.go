@@ -16,11 +16,11 @@ import (
 
 type LevelWriter struct {
 	loggers   map[zerolog.Level]io.WriteCloser
-	allWriter io.WriteCloser // 所有日志的汇总文件
+	allWriter []io.WriteCloser // 所有日志的汇总文件
 }
 
 // NewLevelWriter 创建分级日志写入器
-func NewLevelWriter() *LevelWriter {
+func NewLevelWriter(writers ...io.WriteCloser) *LevelWriter {
 	var (
 		basePath = "logs"
 
@@ -50,13 +50,13 @@ func NewLevelWriter() *LevelWriter {
 		}
 	}
 
-	lw.allWriter = &lumberjack.Logger{
+	lw.allWriter = append([]io.WriteCloser{&lumberjack.Logger{
 		Filename:   filepath.Join(basePath, "all.log"),
 		MaxSize:    maxSize,
 		MaxBackups: maxBackups,
 		MaxAge:     maxAge,
 		Compress:   compress,
-	}
+	}}, writers...)
 
 	return lw
 }
@@ -70,28 +70,44 @@ func (lw *LevelWriter) WriteLevel(level zerolog.Level, p []byte) (n int, err err
 		}
 	}
 
-	return lw.allWriter.Write(p)
-}
-
-func (lw *LevelWriter) Write(p []byte) (n int, err error) {
-	return lw.allWriter.Write(p)
-}
-
-func (lw *LevelWriter) Close() error {
-	var errs error
-
-	for _, logger := range lw.loggers {
-		if err := logger.Close(); err != nil {
-			errs = errors.Join(errs, err)
+	for _, writer := range lw.allWriter {
+		n, err = writer.Write(p)
+		if err != nil {
+			return n, err
 		}
 	}
 
-	if err := lw.allWriter.Close(); err != nil {
-		errs = errors.Join(errs, err)
+	return len(p), nil
+}
+
+func (lw *LevelWriter) Write(p []byte) (n int, err error) {
+	for _, writer := range lw.allWriter {
+		n, err = writer.Write(p)
+		if err != nil {
+			return n, err
+		}
+	}
+
+	return len(p), nil
+}
+
+func (lw *LevelWriter) Close() error {
+	var errs []error
+
+	for _, logger := range lw.loggers {
+		if err := logger.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	for _, writer := range lw.allWriter {
+		if err := writer.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	if errs != nil {
-		return fmt.Errorf("failed to close LevelWriter: %w", errs)
+		return fmt.Errorf("failed to close LevelWriter: %w", errors.Join(errs...))
 	}
 
 	return nil
@@ -102,8 +118,8 @@ func init() {
 		return filepath.Base(file) + ":" + strconv.Itoa(line)
 	}
 
-	levelWriter := NewLevelWriter()
-	zerologLogger := zerolog.New(io.MultiWriter(levelWriter, zerolog.NewConsoleWriter())).With().Caller().Logger()
+	levelWriter := NewLevelWriter(zerolog.NewConsoleWriter())
+	zerologLogger := zerolog.New(levelWriter).With().Caller().Logger()
 	slog.SetDefault(slog.New(slogzerolog.Option{Level: slog.LevelDebug, Logger: &zerologLogger}.NewZerologHandler()))
 
 	runtime.SetFinalizer(levelWriter, func(lw *LevelWriter) { lw.Close() })
