@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -20,6 +21,14 @@ type LevelWriter struct {
 
 // NewLevelWriter 创建分级日志写入器
 func NewLevelWriter(writers ...io.WriteCloser) *LevelWriter {
+	lw := &LevelWriter{}
+
+	_, ok := os.LookupEnv("TEMPLOG_DISABLE_FILE")
+	if ok {
+		lw.allWriter = writers
+		return lw
+	}
+
 	var (
 		basePath = "logs"
 
@@ -28,10 +37,6 @@ func NewLevelWriter(writers ...io.WriteCloser) *LevelWriter {
 		maxAge     = 30  // 保留的最大天数
 		compress   = true
 
-		lw = &LevelWriter{
-			loggers: make(map[zerolog.Level]io.WriteCloser),
-		}
-
 		levels = []zerolog.Level{
 			zerolog.DebugLevel,
 			zerolog.InfoLevel,
@@ -39,6 +44,8 @@ func NewLevelWriter(writers ...io.WriteCloser) *LevelWriter {
 			zerolog.ErrorLevel,
 		}
 	)
+
+	lw.loggers = make(map[zerolog.Level]io.WriteCloser, 4)
 	for _, level := range levels {
 		lw.loggers[level] = &lumberjack.Logger{
 			Filename:   filepath.Join(basePath, level.String(), level.String()+".log"),
@@ -49,13 +56,13 @@ func NewLevelWriter(writers ...io.WriteCloser) *LevelWriter {
 		}
 	}
 
-	lw.allWriter = append([]io.WriteCloser{&lumberjack.Logger{
+	lw.allWriter = append(append(make([]io.WriteCloser, 0, len(writers)+1), &lumberjack.Logger{
 		Filename:   filepath.Join(basePath, "all.log"),
 		MaxSize:    maxSize,
 		MaxBackups: maxBackups,
 		MaxAge:     maxAge,
 		Compress:   compress,
-	}}, writers...)
+	}), writers...)
 
 	return lw
 }
