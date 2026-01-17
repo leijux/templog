@@ -6,7 +6,6 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
-	"runtime"
 	"strconv"
 
 	"github.com/rs/zerolog"
@@ -113,6 +112,8 @@ func (lw *LevelWriter) Close() error {
 	return nil
 }
 
+var Close func() error
+
 func init() {
 	zerolog.CallerMarshalFunc = func(_ uintptr, file string, line int) string {
 		return filepath.Base(file) + ":" + strconv.Itoa(line)
@@ -122,5 +123,5 @@ func init() {
 	zerologLogger := zerolog.New(levelWriter).With().Caller().Logger()
 	slog.SetDefault(slog.New(slogzerolog.Option{Level: slog.LevelDebug, Logger: &zerologLogger}.NewZerologHandler()))
 
-	runtime.SetFinalizer(levelWriter, func(lw *LevelWriter) { lw.Close() })
+	Close = levelWriter.Close
 }
