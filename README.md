@@ -27,11 +27,14 @@ go get github.com/leijux/templog
 package main
 
 import (
-    _ "github.com/leijux/templog" // 只需导入即可启用日志
     "log/slog"
+
+    "github.com/leijux/templog" // 只需导入即可启用日志
 )
 
 func main() {
+    defer templog.Close() // 程序结束时关闭日志文件
+    
     // 直接使用标准库的 slog 记录日志
     slog.Debug("这是一条调试日志", "key", "value")
     slog.Info("程序启动", "version", "1.0.0")
