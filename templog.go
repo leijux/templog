@@ -22,7 +22,7 @@ func init() {
 	name := "templog"
 	info, ok := debug.ReadBuildInfo()
 	if ok {
-		name = info.Main.Path
+		name = filepath.Base(info.Main.Path)
 	}
 
 	_, ok = os.LookupEnv("TEMPLOG_DISABLE_FILE")
